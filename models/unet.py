@@ -4,7 +4,7 @@ from typing import List
 
 class MultiConv3d(nn.Module):
     def __init__(self, channels:List = None):
-        super(MultiConv3d).__init__()
+        super(MultiConv3d, self).__init__()
         layers = []
         for in_channels, out_channels in zip(channels[:-1], channels[1:]):
             layers.append(nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1, stride=1))
@@ -17,7 +17,7 @@ class MultiConv3d(nn.Module):
 
 class UNet3D(nn.Module):
     def __init__(self, in_channels, out_channels, features=None) -> None:
-        super(UNet3D).__init__()
+        super(UNet3D, self).__init__()
         if features == None: 
             features = [32, 64, 128, 256]
         
@@ -32,12 +32,8 @@ class UNet3D(nn.Module):
 
         # Decoder
         for feature in reversed(features):
-            self.decoder.append(
-                (
-                    nn.ConvTranspose3d(feature*2, feature, kernel_size=2, stride=2),
-                    MultiConv3d([feature*2, feature, feature])
-                )
-            )
+            self.decoder.append(nn.ConvTranspose3d(feature*2, feature, kernel_size=2, stride=2))
+            self.decoder.append(MultiConv3d([feature*2, feature, feature]))
 
         # Bottleneck
         self.bottleneck = MultiConv3d([features[-1], features[-1]*2, features[-1]*2])
@@ -60,7 +56,7 @@ class UNet3D(nn.Module):
 
         # Decoding
         skip_connections = reversed(skip_connections)
-        for skip_connection, (trans_conv, multiconv) in zip(skip_connections, self.decoder):
+        for skip_connection, trans_conv, multiconv in zip(skip_connections, self.decoder[0::2], self.decoder[1::2]):
             x = trans_conv(x)
             if x.shape != skip_connection.shape:
                 x = self._pad_if_needed(x, skip_connection)
