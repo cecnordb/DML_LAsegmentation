@@ -11,8 +11,8 @@ class TrainDataset(Dataset):
         self.patch_size = patch_size
         self.transform = transform
         
-        self.data_paths = sorted(glob(data_dir + '/*'))
-        self.label_paths = sorted(glob(labels_dir + '/*'))
+        self.data_paths = sorted(glob(data_dir + '/*.nii'))
+        self.label_paths = sorted(glob(labels_dir + '/*.nii'))
 
     def __len__(self):
         return len(self.data_paths)
@@ -30,7 +30,7 @@ class TrainDataset(Dataset):
             image_patch = self.transform(image_patch)
 
         image_tensor = torch.tensor(image_patch, dtype=torch.float32).unsqueeze(0)
-        label_tensor = torch.tensor(label_patch, dtype=torch.int64)
+        label_tensor = torch.tensor(label_patch, dtype=torch.float32)
 
         return image_tensor, label_tensor
     
@@ -43,7 +43,7 @@ class TrainDataset(Dataset):
         return image[sz:sz+pz, sy:sy+py, sx:sx+px], label[sz:sz+pz, sy:sy+py, sx:sx+px]
     
 
-class TestDatasetSliding(Dataset): 
+class TestDataset(Dataset): 
     """
     Test dataset loads the entire image 
     """
