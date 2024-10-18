@@ -14,13 +14,14 @@ def train_epoch(model, optimizer, loss_fn, train_loader, scheduler, device):
         input, target = batch
         input, target = input.to(device), target.to(device)
         optimizer.zero_grad()
-        pred = model(input)
-        pred = pred.squeeze(1)
-        loss = loss_fn(pred, target)
+        pred_logits = model(input)
+        pred_logits = pred_logits.squeeze(1)
+        loss = loss_fn(pred_logits, target)
         loss.backward()
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
+        pred = torch.sigmoid(pred_logits)
         train_loss.add(loss.item())
         train_iou.add(iou(pred, target).cpu().item())
         train_dice.add(dice_coefficient(pred, target).cpu().item())
@@ -37,11 +38,12 @@ def validate(model, loss_fn, val_loader, device, patch_size):
         # Here I need to separate the input into patches and then merge them after they have all been analyzed. Should I do this with overlap? Yes I should.
         input, target = batch
         input, target = input.to(device), target.to(device)
-        pred = patched_forward(model, input, patch_size, device)
-        pred = pred.squeeze(1)
-
+        pred_logits = patched_forward(model, input, patch_size, device)
+        pred_logits = pred_logits.squeeze(1)
+        pred = torch.sigmoid(pred_logits)
         # Calculate the loss, iou and dice coefficient
-        loss = loss_fn(pred, target)
+        loss = loss_fn(pred_logits, target)
+
         validation_loss.add(loss.item())
         validation_iou.add(iou(pred, target).cpu().item())
         validation_dice.add(dice_coefficient(pred, target).cpu().item())
