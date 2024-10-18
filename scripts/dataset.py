@@ -7,8 +7,10 @@ import numpy as np
 class TrainDataset(Dataset): 
     """
     require_target = True => all returned patches contain atleast some of the target
+    preoad_all_images = True => all images are loaded into memory at the start
     """
-    def __init__(self, data_dir, labels_dir, patch_size, require_target=False,transform=None):
+
+    def __init__(self, data_dir, labels_dir, patch_size, require_target=False,transform=None, preload_all_images=True, num_patches_per_image=1):
         self.patch_size = patch_size
         self.transform = transform
         self.require_target = require_target
@@ -16,29 +18,44 @@ class TrainDataset(Dataset):
         self.data_paths = sorted(glob(data_dir + '/*.nii'))
         self.label_paths = sorted(glob(labels_dir + '/*.nii'))
 
+        self.preload_all_images = preload_all_images
+        if preload_all_images:
+            self.data = {path_: sitk.GetArrayFromImage(sitk.ReadImage(path_)).astype('float32') for path_ in self.data_paths}
+            self.labels = {path_: sitk.GetArrayFromImage(sitk.ReadImage(path_)).astype('int64') for path_ in self.label_paths}
+
+        self.num_patches_per_image = num_patches_per_image
+
     def __len__(self):
         return len(self.data_paths)
     
     def __getitem__(self, idx):
-        image  = sitk.ReadImage(self.data_paths[idx])
-        label = sitk.ReadImage(self.label_paths[idx])
-
-        image_np = sitk.GetArrayFromImage(image).astype('float32')
-        label_np = sitk.GetArrayFromImage(label).astype('int64')
-
-        if self.require_target:
-            image_patch, label_patch = self.random_crop_3d_target(image_np, label_np, self.patch_size)
+        if self.preload_all_images:
+            image_np = self.data[self.data_paths[idx]]
+            label_np = self.labels[self.label_paths[idx]]
         else:
-            image_patch, label_patch = self.random_crop_3d(image_np, label_np, self.patch_size)
-        
+            image  = sitk.ReadImage(self.data_paths[idx])
+            label = sitk.ReadImage(self.label_paths[idx])
 
-        if self.transform:
-            image_patch = self.transform(image_patch)
+            image_np = sitk.GetArrayFromImage(image).astype('float32')
+            label_np = sitk.GetArrayFromImage(label).astype('int64')
 
-        image_tensor = torch.tensor(image_patch, dtype=torch.float32).unsqueeze(0)
-        label_tensor = torch.tensor(label_patch, dtype=torch.float32)
+        patches = []
+        labels = []
+        for _ in range(self.num_patches_per_image):
+            if self.require_target:
+                image_patch, label_patch = self.random_crop_3d_target(image_np, label_np, self.patch_size)
+            else:
+                image_patch, label_patch = self.random_crop_3d(image_np, label_np, self.patch_size)
+            
+            if self.transform:
+                image_patch = self.transform(image_patch)
 
-        return image_tensor, label_tensor
+            image_tensor = torch.tensor(image_patch, dtype=torch.float32).unsqueeze(0)
+            label_tensor = torch.tensor(label_patch, dtype=torch.float32)
+            patches.append(image_tensor)
+            labels.append(label_tensor)
+
+        return torch.stack(patches, dim=0), torch.stack(labels, dim=0)
     
     def random_crop_3d(self, image, label, patch_size):
         z, y, x = image.shape
