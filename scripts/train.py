@@ -12,6 +12,10 @@ def train_epoch(model, optimizer, loss_fn, train_loader, scheduler, device):
     train_dice = AccumulatingMetric()
     for batch in train_loader:
         input, target = batch
+        # Concatenate the patches along the batch dimension
+        input = input.view(-1, *input.shape[2:])
+        target = target.view(-1, *target.shape[2:])
+
         input, target = input.to(device), target.to(device).float()
         optimizer.zero_grad()
         pred_logits = model(input)
@@ -96,22 +100,34 @@ def train(model, optimizer, loss_fn, train_loader, val_loader, scheduler, device
     train_metrics = defaultdict(list)
     val_metrics = defaultdict(list)
 
+    best_val_loss = float('inf')  # To store the best validation loss
+    best_model_state = None       # To store the best model state
+
     for epoch in range(epochs):
         start_time = time()
+        # Training step
         train_loss, train_iou, train_dice = train_epoch(model, optimizer, loss_fn, train_loader, scheduler, device)
         train_metrics["loss"].append(train_loss)
         train_metrics["iou"].append(train_iou)
         train_metrics["dice"].append(train_dice)
         print(f"Epoch {epoch + 1} of {epochs} took {time() - start_time:.2f}s | Training: loss={train_loss:.4f}, iou={train_iou:.4f}, dice={train_dice:.4f}")
     
+        # Validation step
         if epoch % validation_freq == validation_freq - 1 or epoch == epochs - 1:
             val_loss, val_iou, val_dice = validate(model, loss_fn, val_loader, device, patch_size)
             val_metrics["loss"].append(val_loss)
             val_metrics["iou"].append(val_iou)
             val_metrics["dice"].append(val_dice)
-            print(f"Validation: loss={val_loss:.4f}, iou={val_iou:.4f}, dice={val_dice:.4f}")
+            print(f"Validation: loss={val_loss:.4f}, iou={val_iou:.4f}, dice={val_dice:.4f}") 
 
-    return train_metrics, val_metrics
+            # Save the best model based on validation loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model_state = model.state_dict()  # Save the model state
+                print(f"New best model found with validation loss {val_loss:.4f}, saving model...")
+
+    model.load_state_dict(best_model_state)
+    return model, train_metrics, val_metrics
 
 
 class AccumulatingMetric:
