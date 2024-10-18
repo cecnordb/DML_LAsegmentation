@@ -12,7 +12,7 @@ def train_epoch(model, optimizer, loss_fn, train_loader, scheduler, device):
     train_dice = AccumulatingMetric()
     for batch in train_loader:
         input, target = batch
-        input, target = input.to(device), target.to(device)
+        input, target = input.to(device), target.to(device).float()
         optimizer.zero_grad()
         pred_logits = model(input)
         pred_logits = pred_logits.squeeze(1)
@@ -37,8 +37,9 @@ def validate(model, loss_fn, val_loader, device, patch_size):
     for batch in val_loader:
         # Here I need to separate the input into patches and then merge them after they have all been analyzed. Should I do this with overlap? Yes I should.
         input, target = batch
-        input, target = input.to(device), target.to(device)
-        pred_logits = patched_forward(model, input, patch_size, device)
+        input, target = input.to(device), target.to(device).float()
+        with torch.no_grad():
+            pred_logits = patched_forward(model, input, patch_size, device)
         pred_logits = pred_logits.squeeze(1)
         pred = torch.sigmoid(pred_logits)
         # Calculate the loss, iou and dice coefficient
@@ -72,8 +73,7 @@ def patched_forward(model, input, patch_size, device, overlap=0.5):
                 z_end, y_end, x_end = z_start + pz, y_start + py, x_start + px
                 
                 patch = input_padded[:, :, z_start:z_end, y_start:y_end, x_start:x_end]
-                with torch.no_grad():
-                    patch_output = model(patch)
+                patch_output = model(patch)
                 # Add the output of the patch to the combined output
                 output[:, :, z_start:z_end, y_start:y_end, x_start:x_end] += patch_output
 
