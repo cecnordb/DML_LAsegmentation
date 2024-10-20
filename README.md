@@ -10,7 +10,7 @@ This project implements a patch-based segmentation technique for the left atrium
 
 The dataset presents challenges due to its limited size and the high variability in the images, which may affect the model's generalization capabilities.
 
-_Citation of data: https://arxiv.org/abs/1902.09063_
+_Data reference: https://arxiv.org/abs/1902.09063_
 
 ### Model Architecture
 We employ a 3D U-Net model for the segmentation task. This model serves as a baseline for performance evaluation against more advanced architectures, such as UNETR, Swin UNETR, nnFormer.
