@@ -29,12 +29,13 @@ class CombinedLoss(nn.Module):
     Expects logit inputs
     """
 
-    def __init__(self, smooth=1):
+    def __init__(self, smooth=1, dice_weight=0.5):
         super(CombinedLoss, self).__init__()
         self.bce_loss = nn.BCEWithLogitsLoss()
         self.smooth = smooth
+        self.dice_weight = dice_weight
 
     def forward(self, outputs, targets):
         ce_loss = self.bce_loss(outputs, targets)
         dice = soft_dice_loss(torch.sigmoid(outputs), targets, self.smooth)
-        return ce_loss + dice
+        return dice * self.dice_weight + ce_loss * (1 - self.dice_weight)
