@@ -3,6 +3,7 @@ from glob import glob
 from torch.utils.data import Dataset
 import SimpleITK as sitk
 import numpy as np
+from monai.transforms import ScaleIntensity
 
 class TrainDataset(Dataset): 
     """
@@ -10,9 +11,10 @@ class TrainDataset(Dataset):
     preoad_all_images = True => all images are loaded into memory at the start
     """
 
-    def __init__(self, data_dir, labels_dir, patch_size, require_target=0, transform=None, preload_all_images=True, num_patches_per_image=1):
+    def __init__(self, data_dir, labels_dir, patch_size, require_target=0, transform=None, scale_intensity=False, preload_all_images=True, num_patches_per_image=1):
         self.patch_size = patch_size
         self.transform = transform
+        self.scale_intensity = ScaleIntensity(minv=0, maxv=1) if scale_intensity else None
         self.require_target = float(require_target)
         
         self.data_paths = sorted(glob(data_dir + '/*.nii'))
@@ -41,22 +43,29 @@ class TrainDataset(Dataset):
             image_np = sitk.GetArrayFromImage(image).astype('float32')
             label_np = sitk.GetArrayFromImage(label).astype('int64')
             bounding_box = None
-            
+        
+        image_tensor = torch.tensor(image_np, dtype=torch.float32)
+        label_tensor = torch.tensor(label_np, dtype=torch.float32)
+
+        if self.scale_intensity is not None:
+            image_tensor = self.scale_intensity(image_tensor)    
+        
         patches = []
         labels = []
         for _ in range(self.num_patches_per_image):
             if torch.rand(1).item() < self.require_target:
-                image_patch, label_patch = self.random_crop_3d_target(image_np, label_np, self.patch_size, bounding_box)
+                image_patch, label_patch = self.random_crop_3d_target(image_tensor, label_tensor, self.patch_size, bounding_box)
             else:
-                image_patch, label_patch = self.random_crop_3d(image_np, label_np, self.patch_size)
+                image_patch, label_patch = self.random_crop_3d(image_tensor, label_tensor, self.patch_size)
             
             if self.transform:
-                image_patch = self.transform(image_patch)
+                transform_dict = {"image": image_patch, "label": label_patch}
+                transformed = self.transform(transform_dict)
+                image_patch, label_patch = transformed["image"], transformed["label"]
 
-            image_tensor = torch.tensor(image_patch, dtype=torch.float32).unsqueeze(0)
-            label_tensor = torch.tensor(label_patch, dtype=torch.float32)
-            patches.append(image_tensor)
-            labels.append(label_tensor)
+            image_patch = image_patch.unsqueeze(0)
+            patches.append(image_patch)
+            labels.append(label_patch)
 
         return torch.stack(patches, dim=0), torch.stack(labels, dim=0)
     
@@ -94,15 +103,16 @@ class TrainDataset(Dataset):
         return z_patch_min, y_patch_min, x_patch_min, z_patch_max, y_patch_max, x_patch_max
 
         
-    
+    # TODO add intensity scaling to the constructor here
 
 class TestDataset(Dataset): 
     """
     Test dataset loads the entire image 
     """
-    def __init__(self, data_dir, labels_dir=None, transform=None):
+    def __init__(self, data_dir, labels_dir=None, transform=None, scale_intensity=False):
         self.transform = transform
-        
+        self.scale_intensity = ScaleIntensity(minv=0, maxv=1) if scale_intensity else None
+
         self.data_paths = sorted(glob(data_dir + '/*'))
         self.label_paths = sorted(glob(labels_dir + '/*')) if labels_dir is not None else None
 
@@ -119,10 +129,13 @@ class TestDataset(Dataset):
         else:
             label_np = None
         
-        if self.transform:
-            image_np = self.transform(image_np)
-
         image_tensor = torch.tensor(image_np, dtype=torch.float32).unsqueeze(0)
+
+        if self.scale_intensity is not None:
+            image_tensor = self.scale_intensity(image_tensor)    
+
+        if self.transform:
+            image_tensor = self.transform(image_tensor)
 
         if label_np is not None:
             label_tensor = torch.tensor(label_np, dtype=torch.int64)
