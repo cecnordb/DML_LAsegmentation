@@ -1,14 +1,24 @@
 import torch.nn as nn
 import torch
 from typing import List
+from enum import Enum
+
+class NormalizationType(Enum):
+    BATCH_NORM = "batch_norm"
+    GROUP_NORM = "group_norm"
+    NONE = "none"
 
 class MultiConv3d(nn.Module):
-    def __init__(self, channels:List = None):
+    def __init__(self, channels:List = None, normalization:NormalizationType = NormalizationType.BATCH_NORM) -> None:
         super(MultiConv3d, self).__init__()
         layers = []
         for in_channels, out_channels in zip(channels[:-1], channels[1:]):
             layers.append(nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1, stride=1))
-            layers.append(nn.BatchNorm3d(out_channels))
+            if normalization == NormalizationType.BATCH_NORM:
+                layers.append(nn.BatchNorm3d(out_channels))
+            elif normalization == NormalizationType.GROUP_NORM:
+                num_groups = min(16, out_channels // 4)
+                layers.append(nn.GroupNorm(num_groups, out_channels))
             layers.append(nn.ReLU(inplace=True))
         self.conv = nn.Sequential(*layers)
     
@@ -16,7 +26,7 @@ class MultiConv3d(nn.Module):
         return self.conv(x)
 
 class UNet3D(nn.Module):
-    def __init__(self, in_channels, out_channels, features=None) -> None:
+    def __init__(self, in_channels, out_channels, features=None, normalization:NormalizationType = NormalizationType.BATCH_NORM) -> None:
         super(UNet3D, self).__init__()
         if features == None: 
             features = [32, 64, 128, 256]
@@ -27,16 +37,16 @@ class UNet3D(nn.Module):
 
         # Encoder
         for feature in features:
-            self.encoder.append(MultiConv3d([in_channels, feature, feature]))
+            self.encoder.append(MultiConv3d([in_channels, feature, feature], normalization))
             in_channels = feature
 
         # Decoder
         for feature in reversed(features):
             self.decoder.append(nn.ConvTranspose3d(feature*2, feature, kernel_size=2, stride=2))
-            self.decoder.append(MultiConv3d([feature*2, feature, feature]))
+            self.decoder.append(MultiConv3d([feature*2, feature, feature], normalization))
 
         # Bottleneck
-        self.bottleneck = MultiConv3d([features[-1], features[-1]*2, features[-1]*2])
+        self.bottleneck = MultiConv3d([features[-1], features[-1]*2, features[-1]*2], normalization)
         
         # Output
         self.final_conv = nn.Conv3d(features[0], out_channels, kernel_size=1)
